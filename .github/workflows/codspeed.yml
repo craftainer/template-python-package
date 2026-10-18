@@ -36,6 +36,10 @@ jobs:
         uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
+          # Same minor as the devcontainer's CPython (.devcontainer/Dockerfile's
+          # PYTHON_VERSION); otherwise uv picks the runner's newest Python that
+          # satisfies requires-python.
+          python-version: "3.14"
 
       - name: Install dependencies
         run: uv sync --locked --all-groups
@@ -44,4 +48,6 @@ jobs:
         uses: CodSpeedHQ/action@v5.5.0
         with:
           mode: simulation
-          run: uv run pytest tests/bench --no-cov --codspeed
+          # pyproject.toml's cache_dir points into the devcontainer's home, which
+          # doesn't exist on this bare runner; use the runner's temp dir instead.
+          run: uv run pytest tests/bench --no-cov --codspeed -o cache_dir=${{ runner.temp }}/pytest-cache
