@@ -291,6 +291,9 @@ cleanly when the registry isn't configured.
 - Give `release.yml` and `template-sync.yml` `contents: write` and
   nothing broader (`template-sync.yml` also needs `pull-requests:
   write`, for nothing else); leave `checks.yml` at `contents: read`.
+- Keep `id-token: write` on `release.yml`'s `build` job only (the one
+  running `make publish`): PyPI trusted publishing via GitHub OIDC. It
+  is unused by repos that don't publish to PyPI.
 
 ## Don't
 
