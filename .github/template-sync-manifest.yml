@@ -10,10 +10,9 @@
 # wants a template-owned path gone for good should move its pattern to
 # "ignore" in a template release rather than deleting the file locally.
 #
-# This is template-base's own manifest, classifying the generic subset it
-# ships, and it is itself "merge" tier: a repo that's both an instance of
-# template-base and its own template for further instances (e.g.
-# template-fastapi) edits this file directly, covering its own (larger)
+# This started as template-base's own manifest and is itself "merge" tier:
+# template-python-package is both an instance of template-base and its own
+# template for further instances, so it edits this file directly, covering its own (larger)
 # tracked-file set, and resolves base's additions by hand -- see that repo's
 # docs/TEMPLATE.md.
 #
@@ -62,6 +61,22 @@ replace:
   - scripts/post-create.sh
   - scripts/develop.d/README.md
   - scripts/post-create.d/README.md
+
+  # template-python-package's own layer on top of base: the CodSpeed
+  # benchmark workflow, the release-check script the Makefile's release
+  # contract calls, and the post-create hook that syncs the uv environment.
+  # All instance-agnostic, so fixes reach every package through a sync.
+  # Hook scripts are listed one by one, not as base's `*.sh` globs: an
+  # instance's own extra hook scripts go in its
+  # template-sync-manifest.local.yml.
+  - .github/workflows/codspeed.yml
+  - scripts/release-check.sh
+  - scripts/post-create.d/10-uv-sync.sh
+  # Same precedent as template-fastapi: the Makefile implements the release
+  # contract identically for every package (the build, SBOM and PyPI publish
+  # steps carry no per-package content, which comes from pyproject.toml), so
+  # it's template-owned.
+  - Makefile
   - .secrets/README.md
   - .secrets/.gitkeep
 
@@ -82,10 +97,17 @@ ignore:
   # Each instance chooses its own license and copyright holder.
   - LICENSE
 
-  # The release-artifact contract (see docs/TEMPLATE.md's "Release: a
-  # Makefile contract" section) is the whole point that this differs per
-  # instance -- template-owned in shape only, never in content.
-  - Makefile
+  # The package scaffold: an instance renames the distribution and the import
+  # package (see README.md), owns its dependencies, code, tests, benchmarks
+  # and import-linter contract, so none of it can be synced.
+  - pyproject.toml
+  - src/
+  - tests/
+
+  # Derived from pyproject.toml; a 3-way merge of a lock file is unreliable,
+  # and the dependency set is the instance's own, so an instance regenerates
+  # it with `uv lock`.
+  - uv.lock
 
   # Product/domain knowledge and working plans: instance-owned from the
   # moment it's instantiated.
@@ -102,11 +124,11 @@ ignore:
   - .github/template-sync-state.json
 
   # Instance hook files (see docs/TEMPLATE.md's "Instance extension
-  # points"): an instance's own compose fragment and the scripts it drops
-  # into the two hook directories.
+  # points"): an instance's own compose fragment (where e.g. a Postgres
+  # service for integration tests goes) and the scripts it drops into
+  # develop.d/. post-create.d/ has no glob here: see the replace tier.
   - .devcontainer/compose.instance.yml
   - scripts/develop.d/*.sh
-  - scripts/post-create.d/*.sh
 
   # An instance's own extra "ignore" patterns for paths this manifest can't
   # know about (see docs/TEMPLATE.md's "Template sync" section).

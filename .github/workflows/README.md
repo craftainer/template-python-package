@@ -26,6 +26,8 @@
   `dist/` as `release-assets-<arch>`; then one job downloads them all,
   runs `make release-check` inside the devcontainer and `make finalize`
   on the host, and creates a GitHub release with everything in `dist/`.
+- `codspeed.yml` — runs `tests/bench` under [CodSpeed](https://codspeed.io/)
+  on every pull request and push to `main`; see "Benchmarks" below.
 - `moderate-bug-triage.yml` / `moderate-bug-fix.yml` /
   `moderate-bug-fix-apply.yml` / `moderate-feature-triage.yml` /
   `moderate-feature-build.yml` / `moderate-feature-build-apply.yml` /
@@ -68,6 +70,18 @@ architecture the host is on, so an arm64 contributor gets a native
 arm64 devcontainer with no QEMU emulation in their inner loop. Only CI
 needs to prove cross-arch correctness continuously; this was manually
 verified end-to-end on arm64 hardware on 2026-09-06.
+
+## Benchmarks
+
+`codspeed.yml` runs `tests/bench` under CodSpeed's simulation mode
+(instruction counts, not wall-clock, so shared-runner noise mostly
+disappears) on every pull request and push to `main`, and reports
+regressions on the PR. It uses `uv` directly on the runner rather than the
+devcontainer, because CodSpeed instruments the benchmark process itself,
+and authenticates over OIDC (`id-token: write`), which needs no secret for
+a public repository (`CODSPEED_TOKEN` is only for private ones). Enabling it
+for a package is one step: install the CodSpeed GitHub app on the repo.
+Until then the run still passes; it just has nowhere to report.
 
 ## Issue moderation
 
@@ -247,6 +261,16 @@ the registry push) carry the same label set, computed once by
   spec's own keys) and derived from `github.repository_owner` alone, so
   it's one stable prefix per org across every repo/template instance
   that org owns, rather than a per-repo namespace to look up each time.
+
+## PyPI publishing
+
+`make publish` (see the root `README.md`) publishes with PyPI trusted
+publishing, so `release.yml` needs `id-token: write` on the job that runs
+it (template-base's `release.yml` grants it) and no stored token.
+
+- `PYPI_PUBLISH` (variable) — unset skips publishing; `testpypi` publishes
+  to TestPyPI; `pypi` to PyPI. Set it per repository, not per organization:
+  each package registers its own pending publisher.
 
 ## Release variables and secrets
 
