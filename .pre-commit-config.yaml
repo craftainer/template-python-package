@@ -48,6 +48,70 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
 
+  # ruff, mypy, pytest and uv itself are project dev-dependencies (see
+  # pyproject.toml) -- running them via `uv run` keeps their pinned versions as
+  # the single source of truth instead of a second pin per tool in this file.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude --fix --exit-non-zero-on-fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        stages: [pre-commit, manual]
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        stages: [pre-commit, manual]
+
+      - id: mypy
+        name: mypy --strict
+        entry: uv run mypy src tests
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push, manual]
+
+      - id: import-linter
+        name: import-linter (package layers)
+        # --cache-dir: no pyproject.toml setting exists for this, only a CLI
+        # flag; kept outside the bind-mounted /workspace like ruff's/mypy's.
+        entry: uv run lint-imports --cache-dir /home/vscode/.cache/import_linter
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push, manual]
+
+      - id: pytest
+        name: pytest (100% coverage gate)
+        entry: uv run pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push, manual]
+
+      - id: uv-lock-check
+        name: uv lock --check
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push, manual]
+
+      - id: pip-audit
+        name: pip-audit (dependency vulnerabilities)
+        # --local: audit exactly what uv.lock resolves into this environment.
+        entry: uv run pip-audit --local
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push, manual]
+
   - repo: local
     hooks:
       - id: template-sync-manifest

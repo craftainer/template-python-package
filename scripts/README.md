@@ -8,6 +8,10 @@
   either.
 - `post-create.sh` — the devcontainer's `postCreateCommand`: git
   `safe.directory`, `prek install`, then every `post-create.d/*.sh`.
+- `release-check.sh` — `make release-check`: installs the built wheel from
+  `dist/` into a fresh venv and imports it; if `PYPI_PUBLISH` is set
+  (`testpypi` or `pypi`), also installs `$RELEASE_VERSION` from that index,
+  retrying with backoff while it propagates, and imports that too.
 - `develop.d/`, `post-create.d/` — instance hook directories, empty apart
   from their own `README.md`; see `docs/TEMPLATE.md`'s "Instance extension
   points".

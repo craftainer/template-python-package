@@ -43,6 +43,15 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\n\\w+_VERSION := (?<currentValue>.*)\\s"
+      ]
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
         "/^\\.github/workflows/.*\\.ya?ml$/"
       ],
       "matchStrings": [

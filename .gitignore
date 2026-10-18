@@ -109,3 +109,15 @@ $RECYCLE.BIN/
 # Claude Code CLI: personal, per-user overrides — never the shared
 # .claude/settings.json.
 .claude/settings.local.json
+
+### Python ###
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.coverage*
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.import_linter_cache/
