@@ -223,6 +223,45 @@ because `npx` (the `clear-thought` MCP server in `.mcp.json`) needs it.
 An instance that adds Python or Node.js as its own application runtime
 can reuse these directly rather than installing a second copy.
 
+## Package template notes
+
+`template-python-package` extends `template-base` for a pure-Python library.
+The sections above still apply; these are the package-specific additions.
+
+- **Package scaffold (instance-owned).** `pyproject.toml`, `uv.lock`, `src/`
+  and `tests/` are `ignore` tier: a package renames the distribution and the
+  import package (see the root `README.md`) and owns its dependencies, code,
+  tests, benchmarks and import-linter contract. Tool *versions* are kept
+  fresh by Renovate (`pep621` and `uv` managers, both on under
+  `config:recommended`), not by sync.
+- **Template-owned tooling (`replace`).** The `Makefile` (release contract:
+  `uv build`, Syft SBOM, trusted-publishing `uv publish`),
+  `scripts/release-check.sh`, `scripts/post-create.d/10-uv-sync.sh` and
+  `.github/workflows/codspeed.yml`. Don't edit them in a package; change
+  them here and release a new tag.
+- **Checks.** The Python hooks in `.pre-commit-config.yaml` (`ruff`,
+  `mypy --strict`, `import-linter`, `pytest` with the 100% coverage gate,
+  `uv lock --check`, `pip-audit`) run through `uv run`, so
+  `prek run --all-files --hook-stage manual` is the one command, locally and
+  in `checks.yml`. Benchmarks live in `tests/bench/`, excluded from the
+  default `pytest` run; run them with `uv run pytest tests/bench --no-cov`.
+- **Adding backing services for integration tests.** A package that needs a
+  service (for example `tool-crud` and its Postgres) uses the compose hook,
+  not a new compose file wired into the base one: add an `include:` of a
+  stack fragment under `.devcontainer/stack/`, plus the `environment`
+  (connection URL, `UV_PROJECT_ENVIRONMENT` if the project directory is a
+  bind mount) and `depends_on` for the `develop` service, to
+  `.devcontainer/compose.instance.yml` (`ignore` tier, so it survives
+  sync). Mark service-dependent tests with a pytest marker and keep them out
+  of the default run unless the stack is up; `release-check` runs inside the
+  devcontainer with the stack available, so it's the place to run them in
+  the release. If the services need extra CLI tooling, add it as a
+  `scripts/develop.d/NN-name.sh` hook and list its path under `ignore:` in
+  `.github/template-sync-manifest.local.yml`.
+- **CodSpeed.** `codspeed.yml` needs the CodSpeed GitHub app installed on the
+  repository and nothing else for a public repo (OIDC); see
+  `.github/workflows/README.md`.
+
 ## Code style
 
 Every file gets a brief header stating what the file *is for* — one
