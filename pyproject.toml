@@ -54,6 +54,8 @@ known-first-party = ["template_python_package"]
 [tool.ruff.lint.per-file-ignores]
 # assert is the point of a test; comparing to literal values is not a magic number.
 "tests/**" = ["S101", "PLR2004"]
+# Template-base's own unittest suite for its sync tooling (synced in, not ours).
+".github/scripts/**" = ["D1"]
 
 [tool.importlinter]
 root_packages = ["template_python_package"]

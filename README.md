@@ -52,8 +52,8 @@ for why it exists.
 ## Publishing to PyPI
 
 Releases use PyPI [trusted publishing](https://docs.pypi.org/trusted-publishers/)
-(GitHub OIDC): no API token is stored anywhere. `make publish` is a no-op
-until you opt in, per repository:
+(GitHub OIDC): no API token is stored anywhere. `make publish-packages` skips
+with a warning until you opt in, per repository:
 
 1. Register a "pending publisher" on the index before the first release
    (PyPI: Your account, Publishing, "Add a new pending publisher"; TestPyPI
@@ -63,7 +63,7 @@ until you opt in, per repository:
    `release.yml` runs under, if you add one).
 2. Set the repository variable `PYPI_PUBLISH` (Settings, Secrets and
    variables, Actions, Variables):
-   - unset: `make publish` prints a skip message and the release only
+   - unset: `make publish-packages` warns that it skipped and the release only
      attaches the sdist, wheel and SBOM to the GitHub release;
    - `testpypi`: publish to TestPyPI;
    - `pypi`: publish to PyPI.
