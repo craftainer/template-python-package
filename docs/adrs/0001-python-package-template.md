@@ -40,8 +40,9 @@ from it. It contains:
   pure-Python wheel (`release-arches` is `["amd64"]`), an sdist, a Syft SPDX
   SBOM, and `uv publish --trusted-publishing always`, enabled per repository
   by the `PYPI_PUBLISH` variable (`testpypi` or `pypi`) and skipped when it
-  is unset; `release-check` installs the built wheel, and the published
-  version when publishing is on, into a fresh environment and imports it;
+  is unset; `release-check` installs the built wheel into a fresh
+  environment and imports it (it gates the release), and `verify-published`,
+  after `publish-packages`, does the same with the published version;
 - PyPI trusted publishing: each package registers a pending publisher for
   its repository and `release.yml`, and its first release goes to TestPyPI
   as a dry run. This relies on `template-base`'s `release.yml` granting

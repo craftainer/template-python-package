@@ -71,3 +71,29 @@ def test_per_arch_publish_uploads_nothing() -> None:
     result = make("-n", "publish")
     assert result.returncode == 0
     assert "uv publish" not in result.stdout
+
+
+def test_verify_published_is_phony() -> None:
+    """a stray file named verify-published cannot shadow the target."""
+    assert re.search(r"^\.PHONY:.*\bverify-published\b", (ROOT / "Makefile").read_text(), re.M)
+
+
+def test_verify_published_without_pypi_publish_does_nothing() -> None:
+    """with PYPI_PUBLISH unset (another registry publishes) there is nothing to verify."""
+    result = make("-s", "verify-published")
+    assert result.returncode == 0
+    assert "nothing to verify" in result.stdout
+
+
+def test_verify_published_unknown_value_fails() -> None:
+    """a PYPI_PUBLISH value other than pypi/testpypi is rejected before any install."""
+    result = make("-s", "verify-published", publish="1")
+    assert result.returncode != 0
+    assert "must be 'pypi' or 'testpypi'" in result.stderr
+
+
+def test_release_check_does_not_touch_the_registry() -> None:
+    """release-check gates the release, so it only checks the local wheel."""
+    text = (ROOT / "scripts" / "release-check.sh").read_text()
+    assert "PYPI_PUBLISH" not in text
+    assert "pypi.org" not in text

@@ -20,7 +20,8 @@
   the instance working tree, and reads/writes
   `../template-sync-state.json`.
 - `test_template_sync.py` — stdlib `unittest` tests for
-  `template_sync.py`'s replace tier (including the executable bit) and a
+  `template_sync.py`'s replace tier (including the executable bit and
+  symlinked destinations), glob expansion of manifest entries, and a
   check that every script a workflow runs directly is executable; backs
   the `scripts-tests` prek hook.
 - `run_claude.sh` — invokes `claude -p` for one issue-moderation stage
