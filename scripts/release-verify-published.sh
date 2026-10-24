@@ -22,11 +22,14 @@ case "${PYPI_PUBLISH:-}" in
         ;;
     pypi)
         index_args=(--index-url https://pypi.org/simple/)
+        deps_args=()
         ;;
     testpypi)
-        # Dependencies live on PyPI, not TestPyPI.
-        index_args=(--index-url https://test.pypi.org/simple/
-            --extra-index-url https://pypi.org/simple/)
+        # Dependencies live on PyPI, not TestPyPI. So the package itself is
+        # installed from TestPyPI alone (no dependencies: a same-named project
+        # on PyPI can never win), then its dependencies come from PyPI.
+        index_args=(--index-url https://test.pypi.org/simple/ --no-deps)
+        deps_args=(--index-url https://pypi.org/simple/)
         ;;
     *)
         echo "PYPI_PUBLISH must be 'pypi' or 'testpypi', got '$PYPI_PUBLISH'" >&2
@@ -60,6 +63,10 @@ python3 -m venv "$tmp/published"
 for ((i = 1; i <= attempts; i++)); do
     if "$tmp/published/bin/python" -m pip install --quiet --no-cache-dir \
         --disable-pip-version-check "${index_args[@]}" "$name==$RELEASE_VERSION"; then
+        if ((${#deps_args[@]})); then
+            "$tmp/published/bin/python" -m pip install --quiet --no-cache-dir \
+                --disable-pip-version-check "${deps_args[@]}" "$name==$RELEASE_VERSION"
+        fi
         got=$("$tmp/published/bin/python" -c "import importlib.metadata as m, $module; print(m.version('$name'))")
         if [[ $got != "$wheel_version" ]]; then
             echo "installed $name $got, expected $wheel_version" >&2
