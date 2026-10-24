@@ -61,13 +61,12 @@ echo "== published $name==$RELEASE_VERSION on $PYPI_PUBLISH"
 attempts=${RELEASE_CHECK_ATTEMPTS:-10}
 delay=${RELEASE_CHECK_DELAY:-15}
 python3 -m venv "$tmp/published"
-if ((${#deps_args[@]})); then
-    "$tmp/published/bin/python" -m pip install --quiet --no-cache-dir \
-        --disable-pip-version-check "${deps_args[@]}" "${wheels[0]}"
-fi
 for ((i = 1; i <= attempts; i++)); do
-    if "$tmp/published/bin/python" -m pip install --quiet --no-cache-dir \
-        --disable-pip-version-check "${index_args[@]}" "$name==$RELEASE_VERSION"; then
+    # Inside the loop so a transient failure of either install is retried.
+    if { ((${#deps_args[@]} == 0)) || "$tmp/published/bin/python" -m pip install --quiet \
+        --no-cache-dir --disable-pip-version-check "${deps_args[@]}" "${wheels[0]}"; } &&
+        "$tmp/published/bin/python" -m pip install --quiet --no-cache-dir \
+            --disable-pip-version-check "${index_args[@]}" "$name==$RELEASE_VERSION"; then
         got=$("$tmp/published/bin/python" -c "import importlib.metadata as m, $module; print(m.version('$name'))")
         if [[ $got != "$wheel_version" ]]; then
             echo "installed $name $got, expected $wheel_version" >&2
