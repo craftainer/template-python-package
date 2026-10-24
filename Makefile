@@ -8,7 +8,7 @@
 # `publish` is the per-arch image publish and is a no-op here (template-base
 # >= 1.9.0).
 
-.PHONY: release-arches build sbom release-assets publish publish-packages release-check finalize
+.PHONY: release-arches build sbom release-assets publish publish-packages verify-published release-check finalize
 
 ARCHES := amd64
 # Distribution name from pyproject.toml, so an instance that renames the
@@ -82,8 +82,16 @@ else
 	@echo "PYPI_PUBLISH must be 'pypi' or 'testpypi', got '$(PYPI_PUBLISH)'." >&2; exit 1
 endif
 
-# Runs once after the arch leg, inside the devcontainer; dist/ holds the
-# downloaded wheel. See scripts/release-check.sh.
+# Once, in release.yml's `verify-published` job, after `publish-packages`
+# succeeded and only when a *_PUBLISH variable is set: installs the published
+# release from the index. A bare runner with no secrets, so plain python3 (not
+# uv) -- see scripts/release-verify-published.sh.
+verify-published:
+	scripts/release-verify-published.sh
+
+# Runs once after the arch leg, inside the devcontainer, and gates the GitHub
+# release and publishing; dist/ holds the downloaded wheel. Checks the local
+# wheel only. See scripts/release-check.sh.
 release-check:
 	scripts/release-check.sh
 

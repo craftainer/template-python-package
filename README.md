@@ -68,8 +68,8 @@ with a warning until you opt in, per repository:
    - `testpypi`: publish to TestPyPI;
    - `pypi`: publish to PyPI.
 3. Do the first release with `testpypi` as a dry run (a pre-release channel
-   is enough), confirm that `make release-check` installs the published
-   version back from TestPyPI, then register the PyPI pending publisher and
+   is enough), confirm that `make verify-published` (the release
+   workflow's last job) installs the published version back from TestPyPI, then register the PyPI pending publisher and
    switch the variable to `pypi`.
 
 The version lives only in the git tag `release.yml` computes; `pyproject.toml`
