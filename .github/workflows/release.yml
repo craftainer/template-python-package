@@ -218,8 +218,10 @@ jobs:
       - name: Pack dist/
         run: |
           if [ -n "$(find dist ! -user "$(id -u)" -print -quit)" ]; then
-            command -v sudo > /dev/null || {
-              echo "::error::dist/ holds files owned by another user and there is no sudo to take them over"
+            # `-n` never prompts: without passwordless sudo this fails at once
+            # instead of hanging or failing later with a less clear error.
+            sudo -n true 2> /dev/null || {
+              echo "::error::dist/ holds files owned by another user and passwordless sudo is not available to take them over"
               exit 1
             }
             sudo chown -R "$(id -u):$(id -g)" dist
@@ -235,6 +237,14 @@ jobs:
 
   release:
     needs: [version, release-check]
+    # Two runs for the same tag (a double dispatch, or a re-run beside a
+    # newer run) must not race on the draft deletion, finalize and release
+    # creation below: the second waits and then sees the published release.
+    # Never cancel a running one (it may be mid-finalize). Per GitHub, at
+    # most one run waits per group, and a newer waiting run replaces it.
+    concurrency:
+      group: release-${{ needs.version.outputs.tag }}
+      cancel-in-progress: false
     # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
@@ -265,8 +275,9 @@ jobs:
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
-          found=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            --jq ".[] | select(.tag_name == \"${RELEASE_TAG}\") | \"\(.id) \(.draft)\"")
+          # The tag goes to jq as a variable, never into the filter text.
+          found=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" |
+            jq -r --arg tag "$RELEASE_TAG" '.[] | select(.tag_name == $tag) | "\(.id) \(.draft)"')
           published=false
           while read -r id draft; do
             [ -n "$id" ] || continue
