@@ -261,9 +261,8 @@ class MergeFileErrorTest(unittest.TestCase):
 
     def merge(self) -> bool:
         """Run ``merge_file`` on the ours/base/theirs files."""
-        return template_sync.merge_file(
-            self.root / "ours", self.root / "base", self.root / "theirs"
-        )
+        root = self.root
+        return template_sync.merge_file(root / "ours", root / "base", root / "theirs")
 
     def test_conflict_is_reported_as_true(self) -> None:
         """Overlapping edits are a conflict: True, markers written."""
@@ -310,6 +309,51 @@ class MergeFileErrorTest(unittest.TestCase):
             contextlib.redirect_stderr(io.StringIO()),
         ):
             self.assertEqual(template_sync.cmd_apply(args), 2)
+
+    def _apply_args(self, manifest: Path) -> argparse.Namespace:
+        """Build ``apply`` arguments over empty checkouts and the given manifest."""
+        return argparse.Namespace(
+            manifest=manifest, old_ref=self.root, new_ref=self.root, instance_root=self.root
+        )
+
+    def _exit_code(self, args: argparse.Namespace) -> int:
+        """Run ``cmd_apply`` with stderr captured."""
+        with contextlib.redirect_stderr(io.StringIO()):
+            return template_sync.cmd_apply(args)
+
+    def test_cmd_apply_returns_error_code_on_missing_manifest(self) -> None:
+        """An unreadable manifest is an error (2), not an uncaught traceback (1)."""
+        self.assertEqual(self._exit_code(self._apply_args(self.root / "absent.yml")), 2)
+
+    def test_cmd_apply_returns_error_code_on_undecodable_manifest(self) -> None:
+        """A manifest that is not UTF-8 (UnicodeDecodeError) exits 2."""
+        manifest = self.root / "manifest.yml"
+        manifest.write_bytes(b"\xff\xfe")
+        self.assertEqual(self._exit_code(self._apply_args(manifest)), 2)
+
+    def test_cmd_apply_returns_error_code_on_tier_paths_failure(self) -> None:
+        """A failure while expanding tiers to paths exits 2."""
+        manifest = self.root / "manifest.yml"
+        manifest.write_text("")
+        with mock.patch.object(template_sync, "tier_paths", side_effect=OSError("denied")):
+            self.assertEqual(self._exit_code(self._apply_args(manifest)), 2)
+
+    def test_cmd_apply_returns_error_code_on_unexpected_exception(self) -> None:
+        """Even a bug (here a KeyError) exits 2, not the traceback's 1 (= conflicts)."""
+        manifest = self.root / "manifest.yml"
+        manifest.write_text("")
+        with mock.patch.object(template_sync, "tier_paths", side_effect=KeyError("bug")):
+            self.assertEqual(self._exit_code(self._apply_args(manifest)), 2)
+
+    def test_cmd_apply_does_not_catch_base_exceptions(self) -> None:
+        """Ctrl-C and ``SystemExit`` still propagate."""
+        manifest = self.root / "manifest.yml"
+        manifest.write_text("")
+        with (
+            mock.patch.object(template_sync, "tier_paths", side_effect=KeyboardInterrupt),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self._exit_code(self._apply_args(manifest))
 
 
 _SCRIPT_PATH_RE = re.compile(r"(?<![\w.-])(\.github/scripts/[\w.-]+\.sh)\b")
