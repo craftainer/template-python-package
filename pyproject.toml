@@ -56,8 +56,6 @@ known-first-party = ["template_python_package"]
 "tests/**" = ["S101", "PLR2004"]
 # Template-base's own unittest suite for its sync tooling (synced in, not ours).
 ".github/scripts/**" = ["D1"]
-# Replace-tier from template-base, which does not select PL: the argv count is not a magic number.
-".github/scripts/assemble_dist.py" = ["PLR2004"]
 
 [tool.importlinter]
 root_packages = ["template_python_package"]

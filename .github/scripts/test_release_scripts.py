@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import itertools
 import shutil
 import subprocess
 import tarfile
@@ -13,6 +14,17 @@ from pathlib import Path
 import assemble_dist
 
 SCRIPTS = Path(__file__).resolve().parent
+
+
+def _gnu_make() -> bool:
+    """Whether ``make`` is GNU make, whose ``-p`` dump format the probe parses."""
+    make = shutil.which("make")
+    if make is None:
+        return False
+    out = subprocess.run(  # noqa: S603 -- fixed argv
+        [make, "--version"], capture_output=True, text=True, check=False
+    )
+    return out.stdout.startswith("GNU Make")
 
 
 def make_tar(
@@ -132,6 +144,70 @@ class AssembleDistTest(unittest.TestCase):
         (self.parts / "assets-amd64.tar").write_bytes(b"not a tar")
         self.assertEqual(assemble_dist.main(["x", '["amd64"]', str(self.parts), str(self.dist)]), 1)
 
+    def test_invalid_arches_are_reported(self) -> None:
+        """ARCHES_JSON must be a non-empty array of plain arch names."""
+        for raw in ("[]", '"amd64"', '{"amd64": 1}', "[1]", '[""]', '["../x"]', '["a/b"]', "nope"):
+            self.assertEqual(
+                assemble_dist.main(["x", raw, str(self.parts), str(self.dist)]), 1, raw
+            )
+        self.assertFalse(self.dist.exists())
+
+    def test_wrong_argument_count(self) -> None:
+        """Missing arguments print the usage and exit 2."""
+        self.assertEqual(assemble_dist.main(["x", "[]"]), 2)
+
+    def test_failure_mid_extract_leaves_nothing(self) -> None:
+        """A member only refused while extracting (unsafe link) leaves no dist/ or temp dir."""
+        self.leg("amd64", {"a": b"1"})
+        self.leg("arm64", {}, links={"latest": "/etc/passwd"})
+        self.assertEqual(
+            assemble_dist.main(["x", '["amd64", "arm64"]', str(self.parts), str(self.dist)]), 1
+        )
+        self.assertEqual(sorted(p.name for p in self.dist.parent.iterdir()), ["parts"])
+
+    def test_existing_dist(self) -> None:
+        """An empty dist/ is filled; one that already holds files is refused untouched."""
+        self.leg("amd64", {"a": b"1"})
+        self.dist.mkdir()
+        assemble_dist.assemble(["amd64"], self.parts, self.dist)
+        self.assertTrue((self.dist / "a").is_file())
+        (self.dist / "keep").write_text("x")
+        with self.assertRaisesRegex(assemble_dist.AssembleError, "not an empty directory"):
+            assemble_dist.assemble(["amd64"], self.parts, self.dist)
+        self.assertEqual(sorted(p.name for p in self.dist.iterdir()), ["a", "keep"])
+
+    def test_unsafe_link_message(self) -> None:
+        """The refusal of an absolute link names the tarball and says what is allowed."""
+        self.leg("amd64", {}, links={"latest": "/etc/passwd"})
+        with self.assertRaisesRegex(
+            assemble_dist.AssembleError, r"assets-amd64\.tar: .*inside dist/"
+        ):
+            assemble_dist.assemble(["amd64"], self.parts, self.dist)
+
+    def test_collisions_do_not_depend_on_leg_order(self) -> None:
+        """With three legs, every ordering accepts or rejects the same layouts."""
+        layouts = {
+            "disjoint": ({"a": b"1"}, {"b": b"1"}, {"d/": None, "d/c": b"1"}, False),
+            "shared dir": ({"d/a": b"1"}, {"d/b": b"1"}, {"d/": None, "d/c": b"1"}, False),
+            "file vs dir": ({"d/a": b"1"}, {"d/b": b"1"}, {"d": b"1"}, True),
+            "file vs implied dir": ({"d": b"1"}, {"e": b"1"}, {"d/x": b"1"}, True),
+            "same file": ({"a": b"1"}, {"b": b"1"}, {"a": b"2"}, True),
+        }
+        for name, (one, two, three, collides) in layouts.items():
+            for order in itertools.permutations([one, two, three]):
+                with tempfile.TemporaryDirectory() as tmp:
+                    parts = Path(tmp) / "parts"
+                    parts.mkdir()
+                    arches = [f"a{i}" for i in range(3)]
+                    for arch, entries in zip(arches, order, strict=True):
+                        make_tar(parts / f"assets-{arch}.tar", entries)
+                    dist = Path(tmp) / "dist"
+                    if collides:
+                        with self.assertRaises(assemble_dist.AssembleError, msg=name):
+                            assemble_dist.assemble(arches, parts, dist)
+                    else:
+                        assemble_dist.assemble(arches, parts, dist)
+
     def test_escaping_path(self) -> None:
         """A member that climbs out of dist/ is rejected."""
         self.leg("amd64", {"../evil": b"1"})
@@ -139,7 +215,7 @@ class AssembleDistTest(unittest.TestCase):
             assemble_dist.assemble(["amd64"], self.parts, self.dist)
 
 
-@unittest.skipUnless(shutil.which("make"), "make not installed")
+@unittest.skipUnless(_gnu_make(), "GNU make not installed (the probe parses its -p dump)")
 class HasMakeTargetTest(unittest.TestCase):
     """``has_make_target.sh`` tells a defined rule from everything else."""
 
@@ -167,13 +243,35 @@ class HasMakeTargetTest(unittest.TestCase):
             ".PHONY: verify-published\nverify-published: ;\n",
             "verify-published: VAR := x\nverify-published:\n\t@true\n",
             'verify-published:\n\t@echo "*** done ***"\n',
+            # Only listed in .PHONY: indistinguishable from an empty rule, and
+            # `make verify-published` is a successful no-op either way.
+            ".PHONY: verify-published\n",
         ):
             self.assertEqual(self.probe(rule).returncode, 0, rule)
 
     def test_recipe_is_not_run(self) -> None:
         """Probing never runs a recipe, `$(MAKE)` lines included."""
-        result = self.probe("verify-published:\n\t$(MAKE) boom\nboom:\n\ttouch ran\n")
-        self.assertEqual(result.returncode, 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "ran"
+            result = self.probe(
+                f"verify-published:\n\t$(MAKE) boom\n\ttouch {marker}\nboom:\n\ttouch {marker}\n"
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertFalse(marker.exists(), "a recipe ran")
+
+    def test_usage_error_is_exit_2(self) -> None:
+        """No argument (or an empty one) is a usage error, never 'not defined' (1)."""
+        for args in ([], [""], ["a", "b"]):
+            with tempfile.TemporaryDirectory() as tmp:
+                result = subprocess.run(  # noqa: S603 -- fixed argv, trusted script
+                    [str(SCRIPTS / "has_make_target.sh"), *args],
+                    cwd=tmp,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            self.assertEqual(result.returncode, 2, args)
+            self.assertIn("usage", result.stderr)
 
     def test_missing_rules(self) -> None:
         """No rule, a mere prerequisite, or a longer name is not the target."""
@@ -184,6 +282,13 @@ class HasMakeTargetTest(unittest.TestCase):
             "verify-published: VAR := x\n",
         ):
             self.assertEqual(self.probe(text).returncode, 1, text)
+
+    def test_name_is_literal(self) -> None:
+        """Regex metacharacters in the name match only themselves."""
+        self.assertEqual(self.probe("c++:\n\t@true\n", "c++").returncode, 0)
+        self.assertEqual(self.probe("a.b:\n\t@true\n", "a.b").returncode, 0)
+        self.assertEqual(self.probe("abb:\n\t@true\n", "a.b").returncode, 1)
+        self.assertEqual(self.probe("c:\n\t@true\n", "c+").returncode, 1)
 
     def test_broken_makefile(self) -> None:
         """A Makefile that fails to parse is an error, not 'missing'."""

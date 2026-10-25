@@ -135,7 +135,7 @@ unchanged across every instance), then drives these targets:
 |---|---|---|---|
 | `release-arches` | once, first | host runner | none; must print a JSON array on stdout, e.g. `["amd64"]` |
 | `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*`; no package-registry variables or secrets, and no OIDC token |
-| `release-check` | once, after all arches; gates everything after it | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY`; **not** `RELEASE_ARCH` (it runs once, not per arch) and no `ARCHES`: to check each arch's files in `dist/`, iterate over `make -s release-arches` |
+| `release-check` | once, after all arches; gates the GitHub release and `publish-packages` (not the per-arch image `publish`, which already ran in `build`) | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY`; **not** `RELEASE_ARCH` (it runs once, not per arch) and no `ARCHES`: to check each arch's files in `dist/`, iterate over `make -s release-arches` |
 | `finalize` | once, after `release-check`; then the GitHub release is created | host runner | same as per-arch minus `RELEASE_ARCH` |
 | `publish-packages` | once, after the GitHub release exists, **only if** `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH` is set | host runner (own job, with `id-token: write`) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`, all `GITHUB_*`, the OIDC token, `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (bootstrap secrets; empty when unset, so treat empty as absent); `dist/` holds every arch leg's files |
 | `verify-published` | once, after `publish-packages` succeeded, **only if** a `*_PUBLISH` variable is set | host runner (own job, no secrets, no OIDC token) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`; `dist/` as for `publish-packages` |
@@ -179,11 +179,15 @@ another release for it.
 
 **Job order.** `build` (per arch) → `release-check` → `release`
 (`finalize`, then the GitHub release) → `publish-packages` →
-`verify-published`. `release-check` gates both the release and publishing.
+`verify-published`. `release-check` gates both the release and package publishing. It does
+not gate the per-arch image `publish`, which runs inside `build`, so a pushed
+per-arch image can exist for a release that `release-check` then fails.
 The GitHub release exists before any registry upload, so a partial
 registry failure leaves the release in place and a re-run of the failed
-job finishes publishing (publishing needs to be re-runnable or skip what
-is already published).
+job finishes publishing. So an instance's `publish-packages` **must be
+safe to run again**: it skips versions already on the registry (for
+example `uv publish --check-url`, or an `npm view` guard) instead of failing
+on them or double-publishing.
 
 The `release` job is re-runnable too: if the release already exists it
 skips `finalize` and the release creation (a leftover draft is deleted and
@@ -195,9 +199,20 @@ must be safe to repeat (it must not double-apply its side effects).
 partial `publish-packages` failure nothing is verified until the re-run of
 the failed jobs, which then runs it.
 
+Two runs for the same tag cannot overlap in the `release` job: it sits in a
+`concurrency` group named after the tag (`cancel-in-progress: false`), so the
+second waits and then sees the published release. GitHub keeps at most one
+waiting run per group, and a newer waiting run replaces it.
+
+In `release-check`, if `dist/` holds files owned by another user (the
+devcontainer ran as root), the job takes them over with `sudo`, which must
+be passwordless (`sudo -n`); the runner images provide that. A self-hosted
+runner without it fails there with a message saying so.
+
 Package templates (npm, Python, Rust) move their
 registry check ("install what was just published") from `release-check` to
-`verify-published`; their `publish-packages` is unchanged. Base's
+`verify-published`; their `publish-packages` is unchanged and already skips
+versions already on the registry. Base's
 `release-check` no longer receives the `*_PUBLISH` variables.
 
 **Package instance checklist.** An instance that publishes a package also:
@@ -205,7 +220,7 @@ sets `repository`, homepage and bugs URLs in its package manifest
 (`package.json`, `pyproject.toml`, `Cargo.toml`) -- npm provenance
 verifies the repository URL against the publishing repository, and the
 other registries show these links to users; and implements `publish-packages`
-in its own `Makefile`, which replaces base's default (the
+(re-runnable: it skips versions already on the registry) in its own `Makefile`, which replaces base's default (the
 `DefaultPublishPackagesTest` in `.github/scripts` skips itself once the
 default message is gone). That only works where the `Makefile` is
 instance-owned, as in base. A downstream template that makes the `Makefile`
@@ -296,6 +311,70 @@ template for further instances (e.g. `template-fastapi`): its own
 for *its* downstream instances, entirely separate from this template's
 manifest (it edits the manifest directly and resolves base's additions by
 hand) — see that repo's own docs for the two-hop chain this produces.
+
+## Template family
+
+`template-base` is the root of a small family. Four mid-layer templates sit
+under it, and each library or app is an instance of exactly one of them (the
+three app templates through `template-docker`):
+
+```text
+template-base
+├── template-python-package ── lib-crud-py, lib-observability-py, lib-crud-sdk-py
+├── template-npm-package ───── lib-crud-sdk-ts, lib-crud-views-ts
+├── template-rust-crate ────── lib-crud-rs, lib-observability-rs
+└── template-docker
+    ├── template-fastapi
+    ├── template-axum
+    └── template-react
+```
+
+Each mid-layer template is an instance of base that is itself a template. It
+adds one kind of artifact to base's release contract and keeps everything
+else from base:
+
+| Template | Adds to base | Tooling it owns (`replace`) | What an instance owns (`ignore`) |
+|---|---|---|---|
+| `template-docker` | the container-image release: multi-arch build, SBOM, OCI labels, smoke test, Trivy scan, Dockerfile version check, and `publish-packages`/`verify-published` as no-ops | `Makefile`, `scripts/image-*.sh`, `scripts/runner-setup.sh`, `scripts/check-dockerfile-versions.sh`, `scripts/skopeo.sh` | `Dockerfile`, `image.mk`, `scripts/runner-setup.d/*.sh` |
+| `template-python-package` | a pure-Python library on PyPI (trusted publishing) | `Makefile`, `scripts/release-*.sh`, `scripts/post-create.d/10-uv-sync.sh`, `codspeed.yml` | `pyproject.toml`, `uv.lock`, `src/`, `tests/` |
+| `template-npm-package` | an ESM TypeScript package on npm (staged first publish, then trusted publishing) | `scripts/release-*.sh`, `scripts/develop.d/10-corepack.sh`, `scripts/post-create.d/10-pnpm-install.sh` | `package.json`, `tsconfig*.json`, `tsdown.config.ts`, `vitest.config.ts`, `src/`, `tests/`, `pnpm-lock.yaml`, and the `Makefile` (a thin caller of the scripts) |
+| `template-rust-crate` | a library crate on crates.io (trusted publishing, bootstrap-token fallback) | `Makefile`, `scripts/release-*`, `rust-toolchain.toml`, `rustfmt.toml`, the rustup and `cargo fetch` hooks | `Cargo.toml`, `Cargo.lock`, `src/`, `tests/`, `deny.toml` |
+
+Each template's own `docs/TEMPLATE.md` has the details and the exact
+manifest; its `docs/adrs/0001-*.md` records why it exists. The three app
+templates inherit the image layer from `template-docker`; they are still
+the place for their own runtime (FastAPI, axum, React) and their own ADRs.
+
+**Sync tiers across the family.** Every hop uses the same three tiers
+(`replace`, `ignore`, `merge`; see "Template sync" and the manifest header).
+A mid-layer classifies its own tree for its instances in its own
+`.github/template-sync-manifest.yml`, which is `merge` tier in every
+instance: base's additions are resolved by hand there.
+An instance lists extra paths of its own under `ignore:` in
+`.github/template-sync-manifest.local.yml`. Which template an instance
+follows is recorded in its `.github/template-sync-state.json`
+(`template_repo`, `synced_tag`). An instance follows its immediate parent: a
+package or image instance its mid-layer, and the mid-layer follows base.
+
+**Order of a change.** A sync reads the parent's latest tagged release, so a
+change travels one released tag at a time:
+
+1. Fix it in `template-base`, merge, and release a new tag.
+2. Each mid-layer takes the base release through a sync PR, merges it and
+   releases its own tag. A base fix reaches `template-docker` and the
+   three package templates this way; the app templates take it from
+   `template-docker` in step 3, after it has released.
+3. Every instance takes its parent's tag through its own sync PR (the app
+   templates take `template-docker`'s; the libraries, their package
+   template's).
+
+A fix to a mid-layer's own files starts at step 2 and skips base. A change to
+the release contract itself (a new target, a changed job order) is a minor
+release of base, and each mid-layer then adapts its own implementation of the
+target before instances re-sync; the "Job order" above is the current
+result of two such changes. Instances that publish packages follow the
+registry's own ordering on top: a package that depends on another is
+released after it.
 
 ## Versions and config
 
