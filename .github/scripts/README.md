@@ -21,7 +21,9 @@
   `../template-sync-state.json`.
 - `test_template_sync.py` — stdlib `unittest` tests for
   `template_sync.py`'s replace and merge tiers (including the executable
-  bit, re-running a merge, and symlinked destinations), glob expansion of
+  bit, re-running a merge, symlinked destinations, and `git merge-file`
+  errors raising instead of counting as conflicts, and `apply`'s exit
+  codes: 0 clean, 1 conflicts, 2 error), glob expansion of
   manifest entries, and a check that every script a workflow runs directly
   is executable; backs the `scripts-tests` prek hook.
 - `assemble_dist.py` / `has_make_target.sh` — helpers of
