@@ -135,7 +135,7 @@ unchanged across every instance), then drives these targets:
 |---|---|---|---|
 | `release-arches` | once, first | host runner | none; must print a JSON array on stdout, e.g. `["amd64"]` |
 | `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*`; no package-registry variables or secrets, and no OIDC token |
-| `release-check` | once, after all arches; gates everything after it | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY` |
+| `release-check` | once, after all arches; gates everything after it | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY`; **not** `RELEASE_ARCH` (it runs once, not per arch) and no `ARCHES`: to check each arch's files in `dist/`, iterate over `make -s release-arches` |
 | `finalize` | once, after `release-check`; then the GitHub release is created | host runner | same as per-arch minus `RELEASE_ARCH` |
 | `publish-packages` | once, after the GitHub release exists, **only if** `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH` is set | host runner (own job, with `id-token: write`) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`, all `GITHUB_*`, the OIDC token, `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (bootstrap secrets; empty when unset, so treat empty as absent); `dist/` holds every arch leg's files |
 | `verify-published` | once, after `publish-packages` succeeded, **only if** a `*_PUBLISH` variable is set | host runner (own job, no secrets, no OIDC token) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`; `dist/` as for `publish-packages` |
@@ -171,8 +171,11 @@ packages must move that upload from `publish` into a new
 own tooling). Until it does, base's default `publish-packages` (if the
 instance kept it) fails with a message naming the variable that is set;
 an instance whose Makefile has no such target fails with `make: No rule
-to make target`. Either way the release stops instead of skipping the
-upload.
+to make target`. Either way nothing is uploaded, and because the GitHub
+release is created first (see "Job order"), the release already exists
+when the `publish-packages` job fails: it is out without its packages.
+Fix the Makefile and re-run the failed jobs to publish them; do not cut
+another release for it.
 
 **Job order.** `build` (per arch) → `release-check` → `release`
 (`finalize`, then the GitHub release) → `publish-packages` →
@@ -180,7 +183,19 @@ upload.
 The GitHub release exists before any registry upload, so a partial
 registry failure leaves the release in place and a re-run of the failed
 job finishes publishing (publishing needs to be re-runnable or skip what
-is already published). Package templates (npm, Python, Rust) move their
+is already published).
+
+The `release` job is re-runnable too: if the release already exists it
+skips `finalize` and the release creation (a leftover draft is deleted and
+recreated), so re-running failed jobs after a later job failed does not
+fail on the existing release. If `release` itself failed before the release
+existed, `finalize` runs again on the re-run, so an instance's `finalize`
+must be safe to repeat (it must not double-apply its side effects).
+`verify-published` runs only after `publish-packages` succeeded, so after a
+partial `publish-packages` failure nothing is verified until the re-run of
+the failed jobs, which then runs it.
+
+Package templates (npm, Python, Rust) move their
 registry check ("install what was just published") from `release-check` to
 `verify-published`; their `publish-packages` is unchanged. Base's
 `release-check` no longer receives the `*_PUBLISH` variables.
@@ -189,9 +204,15 @@ registry check ("install what was just published") from `release-check` to
 sets `repository`, homepage and bugs URLs in its package manifest
 (`package.json`, `pyproject.toml`, `Cargo.toml`) -- npm provenance
 verifies the repository URL against the publishing repository, and the
-other registries show these links to users; and implements `publish-packages` itself, which replaces base's
-default (the `DefaultPublishPackagesTest` in `.github/scripts` skips itself
-once the default message is gone). `release-check` receives
+other registries show these links to users; and implements `publish-packages`
+in its own `Makefile`, which replaces base's default (the
+`DefaultPublishPackagesTest` in `.github/scripts` skips itself once the
+default message is gone). That only works where the `Makefile` is
+instance-owned, as in base. A downstream template that makes the `Makefile`
+replace-tier (an image template, say) gives its instances no place to
+implement it, so such a template either ships the `publish-packages` logic
+itself, driven by variables the instance sets, or is not a fit for package
+instances. `release-check` receives
 `GITHUB_REPOSITORY`, so an instance can run repository guards there.
 It also moves any "install what was just published" check from
 `release-check` to `verify-published` (see "Job order" above).
@@ -224,8 +245,13 @@ same move); (5) check a release with `testpypi` before relying on it.
 `release-check`'s job assembles all of them into one `dist/`, failing if an
 arch's upload is missing or two legs produced the same file name, so
 **per-arch file names must include the arch**. `release-check` may add
-more files to `dist/`; the assembled `dist/` is handed to `release`,
-`publish-packages` and `verify-published`, and `finalize` may add more.
+more files to `dist/`, and the assembled `dist/` (uploaded at the end of the
+`release-check` job, before `finalize`) is what `release`,
+`publish-packages` and `verify-published` start from. `finalize` may add
+more files, but they are attached to the GitHub release only:
+`publish-packages` and `verify-published` do not see them. A path that two
+legs both produce (the same file name, a file in one and a directory of
+that name in another, or a symlink) fails the assembly.
 `release.yml` then runs `gh release create` with every file left in
 `dist/`.
 

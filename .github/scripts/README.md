@@ -24,6 +24,11 @@
   symlinked destinations), glob expansion of manifest entries, and a
   check that every script a workflow runs directly is executable; backs
   the `scripts-tests` prek hook.
+- `assemble_dist.py` / `has_make_target.sh` — helpers of
+  `../workflows/release.yml`: merge the per-arch `dist/` tarballs
+  (rejecting any path two arches both produce), and tell whether the
+  Makefile defines a target without running it (the `verify-published`
+  probe). `test_release_scripts.py` tests both; `scripts-tests` runs it.
 - `run_claude.sh` — invokes `claude -p` for one issue-moderation stage
   inside the devcontainer; shared by all four Claude-invoking
   `../workflows/moderate-*.yml` jobs. See `../workflows/README.md`'s

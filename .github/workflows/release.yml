@@ -3,13 +3,16 @@
 # "Release: a Makefile contract" section) and creates a GitHub release
 # with everything the instance's Makefile populated into dist/:
 # `release-arches` picks the arch matrix; `build`/`sbom`/`release-assets`/
-# `publish` (image registries) run once per arch on a native runner;
-# then, once each and in this order: `release-check` (inside the
-# devcontainer; gates everything after it), `finalize` + the GitHub release
-# (host), and only after the release exists `publish-packages`
-# (PyPI/npm/crates.io) and `verify-published`, both in jobs that exist only
-# for instances that opt in. So a partial registry failure never withholds
-# the GitHub release; a re-run of just the failed jobs finishes publishing.
+# `publish` (image registries) run once per arch on a native runner (image
+# `publish` runs inside `build`, so a pushed image is not gated by
+# `release-check`); then, once each and in this order: `release-check`
+# (inside the devcontainer; gates the GitHub release and package
+# publishing), `finalize` + the GitHub release (host), and only after the
+# release exists `publish-packages` (PyPI/npm/crates.io) and
+# `verify-published`, both in jobs that exist only for instances that opt in.
+# So a partial registry failure never withholds the GitHub release; a re-run
+# of just the failed jobs finishes publishing (the `release` job skips an
+# existing release).
 name: Release
 
 on:
@@ -138,8 +141,9 @@ jobs:
           path: ${{ runner.temp }}/assets-${{ matrix.arch }}.tar
           if-no-files-found: error
 
-  # Validation gate: runs once after every arch leg, before anything is
-  # released or published. Assembles the per-arch `dist/`s (failing on a
+  # Validation gate: runs once after every arch leg, before the GitHub
+  # release and package publishing (not before the per-arch image `publish`
+  # in `build`). Assembles the per-arch `dist/`s (failing on a
   # missing arch or on a file name two legs both produced, which a plain
   # merge would silently overwrite), runs `make release-check` in the
   # devcontainer, and hands the assembled `dist/` (including anything
@@ -165,28 +169,12 @@ jobs:
           path: parts/
           merge-multiple: true
 
+      # Fails on a missing arch or on any path two legs both produce (same
+      # file name, file vs directory, symlinks), see the script.
       - name: Assemble dist/
         env:
           ARCHES: ${{ needs.version.outputs.arches }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          for arch in $(jq -r '.[]' <<< "$ARCHES"); do
-            tarball="parts/assets-${arch}.tar"
-            if [ ! -f "$tarball" ]; then
-              echo "::error::no release assets uploaded for arch ${arch}"
-              exit 1
-            fi
-            while IFS= read -r entry; do
-              entry="${entry#./}"
-              case "$entry" in "" | */) continue ;; esac
-              if [ -e "dist/${entry}" ]; then
-                echo "::error::dist/${entry} is produced by more than one arch leg; per-arch file names must include the arch"
-                exit 1
-              fi
-            done < <(tar -tf "$tarball")
-            tar -C dist -xf "$tarball"
-          done
+        run: python3 .github/scripts/assemble_dist.py "$ARCHES" parts dist
 
       # Unique per run so concurrent runs (two PRs, or a re-run) never
       # collide on container/volume/network names, and so the teardown
@@ -225,8 +213,18 @@ jobs:
           fi
           docker compose -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
 
+      # The devcontainer runs as another user (often root), so files it
+      # wrote into dist/ may be unreadable here.
       - name: Pack dist/
-        run: tar -C dist -cf "$RUNNER_TEMP/dist.tar" .
+        run: |
+          if [ -n "$(find dist ! -user "$(id -u)" -print -quit)" ]; then
+            command -v sudo > /dev/null || {
+              echo "::error::dist/ holds files owned by another user and there is no sudo to take them over"
+              exit 1
+            }
+            sudo chown -R "$(id -u):$(id -g)" dist
+          fi
+          tar -C dist -cf "$RUNNER_TEMP/dist.tar" .
 
       - name: Upload assembled dist/
         uses: actions/upload-artifact@v7.0.2
@@ -254,7 +252,36 @@ jobs:
           mkdir -p dist
           tar -C dist -xf "$RUNNER_TEMP/release-dist/dist.tar"
 
+      # Makes this job re-runnable: once the release is published, a re-run
+      # (e.g. after a later job failed) must not finalize or create it again.
+      # A leftover draft (an earlier attempt died while attaching assets) is
+      # deleted -- not its tag -- so the release is recreated cleanly. Looked
+      # up through the releases list: unlike `gh release view`, it includes
+      # drafts.
+      - name: Check for an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          found=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${RELEASE_TAG}\") | \"\(.id) \(.draft)\"")
+          published=false
+          while read -r id draft; do
+            [ -n "$id" ] || continue
+            if [ "$draft" = "true" ]; then
+              echo "Deleting the leftover draft release $RELEASE_TAG (id $id)."
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
+            else
+              echo "Release $RELEASE_TAG already exists; skipping finalize and release creation."
+              published=true
+            fi
+          done <<< "$found"
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+
       - name: Finalize
+        if: steps.existing.outputs.published != 'true'
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
@@ -270,6 +297,7 @@ jobs:
       # notes" changelog -- the same one the web UI's button produces.
       # Every file `make release-assets` left in dist/ is attached.
       - name: Create GitHub release
+        if: steps.existing.outputs.published != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -378,12 +406,13 @@ jobs:
           # An instance whose Makefile predates this target (not
           # template-owned, so a sync does not add it) has nothing to run:
           # warn instead of failing after the packages are already live.
-          # `make -q` never runs a recipe; exit 2 means "no rule" (or an
-          # unreadable Makefile), 0/1 mean the target exists.
+          # The probe fails (exit 2) on a Makefile that does not parse.
           rc=0
-          make -s -q verify-published > /dev/null 2>&1 || rc=$?
-          if [ "$rc" -eq 2 ]; then
+          .github/scripts/has_make_target.sh verify-published || rc=$?
+          if [ "$rc" -eq 1 ]; then
             echo "::warning::this Makefile has no verify-published target; the published release was not verified"
             exit 0
+          elif [ "$rc" -ne 0 ]; then
+            exit "$rc"
           fi
           make verify-published
