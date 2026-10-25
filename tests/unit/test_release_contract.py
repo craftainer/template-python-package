@@ -171,3 +171,47 @@ def test_verify_published_fails_fast_when_no_interpreter_satisfies_requires_pyth
     assert "requires-python '>=99'" in result.stderr
     assert "No interpreter found" in result.stderr
     assert "never appeared" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("attempts", "delay", "expected_sleeps"),
+    [(1, "5", []), (3, "5", ["5", "10"]), (4, "100", ["100", "120", "120"])],
+)
+def test_verify_published_does_not_sleep_after_the_last_attempt(
+    tmp_path: Path, attempts: int, delay: str, expected_sleeps: list[str]
+) -> None:
+    """a release that never appears waits between attempts only, not after the last one."""
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(ROOT / "scripts" / "release-verify-published.sh", tmp_path / "scripts")
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist" / "pkg-1.0.0-py3-none-any.whl").write_bytes(b"")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "pkg"\nversion = "0"\n')
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    sleeps = tmp_path / "sleeps"
+    # Fake uv: the venv is created, every install fails. Fake sleep: only records.
+    (bin_dir / "uv").write_text('#!/bin/sh\n[ "$1" = venv ] && exit 0\nexit 1\n')
+    (bin_dir / "sleep").write_text(f'#!/bin/sh\necho "$1" >> "{sleeps}"\n')
+    for fake in bin_dir.iterdir():
+        fake.chmod(0o755)
+    env = {
+        **{k: v for k, v in os.environ.items() if k != "VERIFY_IN_CONTAINER"},
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "PYPI_PUBLISH": "pypi",
+        "RELEASE_VERSION": "1.0.0",
+        "RELEASE_CHECK_ATTEMPTS": str(attempts),
+        "RELEASE_CHECK_DELAY": delay,
+    }
+    result = subprocess.run(  # noqa: S603 -- fixed argv, trusted script
+        ["bash", str(tmp_path / "scripts" / "release-verify-published.sh")],  # noqa: S607
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode != 0
+    assert "pkg==1.0.0 never appeared on pypi" in result.stderr
+    assert (sleeps.read_text().split() if sleeps.exists() else []) == expected_sleeps
+    assert f"attempt {attempts}/{attempts}" not in result.stdout
+    assert result.stdout.count("retrying in") == attempts - 1
