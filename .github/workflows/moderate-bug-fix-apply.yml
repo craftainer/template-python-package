@@ -42,12 +42,9 @@ jobs:
       - name: Check for moderation result
         id: result
         env:
+          REPO: ${{ github.repository }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-        run: |
-          set -euo pipefail
-          count=$(gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}/artifacts" \
-            --jq '[.artifacts[] | select(.name == "moderation-result" and (.expired | not))] | length')
-          echo "found=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        run: .github/scripts/find_moderation_result.sh "$REPO" "$RUN_ID"
 
       - name: Download moderation result
         if: steps.result.outputs.found == 'true'
