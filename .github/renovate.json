@@ -33,6 +33,11 @@
       "pinDigests": true
     },
     {
+      "description": "The uv version appears in the Makefile (UV_VERSION and the UV_IMAGE tag) and the devcontainer (UV_VERSION ARG); tests/unit/test_release_contract.py and a Makefile guard fail if they drift, so they move in one PR.",
+      "matchDepNames": ["astral-sh/uv", "ghcr.io/astral-sh/uv"],
+      "groupName": "uv"
+    },
+    {
       "description": "Renovate can't regenerate .devcontainer/devcontainer-lock.json, so features are bumped by hand together with it (see .devcontainer/README.md).",
       "matchManagers": ["devcontainer"],
       "matchDepTypes": ["feature"],
@@ -68,6 +73,17 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\\s*\\n\\w+_VERSION := (?<currentValue>.*)\\s"
       ]
+    },
+    {
+      "description": "The uv and syft images pinned by tag and digest in the Makefile (UV_IMAGE, SYFT_IMAGE); Renovate updates both. The UV_IMAGE tag also carries the Python minor and variant, which the Python minor rule does not rewrite: a Makefile guard fails until it is moved by hand.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "(?:UV|SYFT)_IMAGE := (?<depName>ghcr\\.io/astral-sh/uv|anchore/syft):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
     },
     {
       "description": "requires-python's lower bound (>=3.14) moves with the Python minor in the Makefile's uv image tag and the devcontainer; the python minor rule groups all three into one PR.",
