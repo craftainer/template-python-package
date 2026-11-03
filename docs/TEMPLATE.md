@@ -495,6 +495,10 @@ the place for their own runtime (FastAPI, axum, React) and their own ADRs.
 A mid-layer classifies its own tree for its instances in its own
 `.github/template-sync-manifest.yml`, which is `merge` tier in every
 instance: base's additions are resolved by hand there.
+In `template-python-package`, `README.md` is `ignore` tier: each package's
+README is entirely its own, so a merge conflicted on every sync. The
+instance owns it from creation, and later changes to the template's
+README no longer reach instances by sync.
 An instance lists extra paths of its own under `ignore:` in
 `.github/template-sync-manifest.local.yml`. Which template an instance
 follows is recorded in its `.github/template-sync-state.json`
