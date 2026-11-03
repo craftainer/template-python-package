@@ -51,7 +51,6 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
 
-<<<<<<< /home/runner/work/template-python-package/template-python-package/.pre-commit-config.yaml
   # ruff, mypy, pytest and uv itself are project dev-dependencies (see
   # pyproject.toml) -- running them via `uv run` keeps their pinned versions as
   # the single source of truth instead of a second pin per tool in this file.
@@ -116,7 +115,6 @@ repos:
         always_run: true
         stages: [pre-push, manual]
 
-=======
   # Guard for the upstream-owned scripts in .github/scripts/: base ships
   # them to every instance, whose own ruff-format hook then checks them
   # against .github/scripts/ruff.toml (the closest config wins), so an
@@ -136,7 +134,6 @@ repos:
         files: ^\.github/scripts/.*\.py$
         stages: [pre-commit, manual]
 
->>>>>>> /tmp/template-new/.pre-commit-config.yaml
   - repo: local
     hooks:
       - id: template-sync-manifest
