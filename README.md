@@ -59,8 +59,16 @@ with a warning until you opt in, per repository:
    (PyPI: Your account, Publishing, "Add a new pending publisher"; TestPyPI
    has its own, separate form on test.pypi.org). Enter the project name from
    `pyproject.toml`, the GitHub owner and repository, the workflow name
-   `release.yml`, and leave the environment empty (or use the one
-   `release.yml` runs under, if you add one).
+   `release.yml`, and the environment `release`. Don't leave the environment
+   empty: without it, any branch workflow with `id-token: write` can
+   publish by OIDC. The environment name must match what the workflow
+   sends, so do this only once `release.yml` declares `environment: release`
+   on the publishing jobs. That arrives with the sync from template-base;
+   check `release.yml` first, otherwise PyPI rejects the OIDC token. Also
+   create the `release` environment (deployment branches limited to the
+   default branch) in Settings, Environments before the first release that
+   carries it. template-base's `docs/TEMPLATE.md` documents the steps once
+   that sync has landed.
 2. Set the repository variable `PYPI_PUBLISH` (Settings, Secrets and
    variables, Actions, Variables):
    - unset: `make publish-packages` warns that it skipped and the release only
