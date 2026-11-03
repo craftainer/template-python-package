@@ -132,6 +132,12 @@ def test_makefile_pins_match_the_devcontainer() -> None:
     assert python.group(1).startswith(f"{_makefile_var('PYTHON_VERSION')}.")
 
 
+@pytest.mark.parametrize("name", ["UV_IMAGE", "SYFT_IMAGE"])
+def test_makefile_images_are_pinned_by_digest(name: str) -> None:
+    """a retagged image must not be able to replace what holds the OIDC token."""
+    assert re.fullmatch(r"\S+:\S+@sha256:[0-9a-f]{64}", _makefile_var(name))
+
+
 def test_verify_published_runs_in_the_pinned_uv_image() -> None:
     """the script gets the pinned image, so the runner needs no Python of its own."""
     result = make("-n", "verify-published", publish="pypi")

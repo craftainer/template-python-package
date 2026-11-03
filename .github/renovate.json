@@ -20,7 +20,7 @@
       "groupName": "major updates"
     },
     {
-      "description": "A Python minor (3.14 -> 3.15) is a runtime upgrade for every instance that runs Python as its app runtime: its own runtime Dockerfile must move in step, and its tools must support the new version. This one rule covers the devcontainer's PYTHON_VERSION, the Makefile's PYTHON_VERSION (the uv image tag) and pyproject.toml's requires-python, so they move in one PR. Keep it out of the automerged group, as its own PR for manual review.",
+      "description": "A Python minor (3.14 -> 3.15) is a runtime upgrade for every instance that runs Python as its app runtime: its own runtime Dockerfile must move in step, and its tools must support the new version. This one rule covers the devcontainer's PYTHON_VERSION, the Makefile's PYTHON_VERSION and pyproject.toml's requires-python, so they move in one PR. The UV_IMAGE tag also carries the Python minor, which no manager rewrites: the Makefile guard fails that PR until the tag and digest are moved by hand. Keep it out of the automerged group, as its own PR for manual review.",
       "matchDatasources": ["python-version"],
       "matchDepNames": ["python"],
       "matchUpdateTypes": ["minor"],
