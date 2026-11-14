@@ -9,7 +9,9 @@
   A step before the hooks runs `../scripts/semver_release_type.py` when an
   instance or downstream template ships it (template-rust-crate does; base
   does not, so the step is skipped here) and the hooks step forwards its
-  `SEMVER_RELEASE_TYPE` into the container, so a `!`-marked PR title (or, on
+  `SEMVER_RELEASE_TYPE` into the container (the step appends the script's
+  output to `$GITHUB_ENV` only if it is empty or exactly
+  `SEMVER_RELEASE_TYPE=<lowercase word>`, failing otherwise), so a `!`-marked PR title (or, on
   `main`, head commit subject) runs `cargo semver-checks` as `major`.
 - `smoke.yml` — builds the `runner` stage of the root `Dockerfile` via
   the root `compose.yml`, starts it against the real Postgres, RustFS,

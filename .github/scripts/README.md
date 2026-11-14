@@ -141,13 +141,14 @@
   `../workflows/README.md`'s "Issue moderation" section and
   `https://github.com/craftainer/template-base/blob/main/docs/adrs/0001-harden-the-issue-moderation-workflows.md`.
 - `moderate_lib.sh` — sourced by the moderation scripts below: `is_sha`,
-  `is_ancestor` (compare API), `check_result_tree` (the commits a patch
+  `is_ancestor` (compare API; a failed call is retried up to three times,
+  a definite "not ahead" answer is not), `check_result_tree` (the commits a patch
   produced against the path allow-list and no symlink or submodule),
   `agent_file` (a result file must be a regular file really under
   `.moderation-out/`) and the size caps.
 - `moderate_check_paths.sh` — the path allow-list: reads NUL-separated
   paths on stdin and fails on any under `.github/`, `.devcontainer/`,
-  `.claude/`, a `Makefile`/`*.mk`, `Dockerfile*`, `compose*.y*ml`/`docker-compose*.y*ml`,
+  `.devcontainer.json`, `.claude/`, a `Makefile`/`*.mk`, `Dockerfile*`, `compose*.y*ml`/`docker-compose*.y*ml`,
   `.pre-commit-config.yaml`, `scripts/release*` and the other files that
   decide what runs with credentials.
 - `moderate_prepare.sh` / `moderate_verify_branch.sh` — run on the runner
@@ -157,7 +158,9 @@
 - `moderate_package_result.sh` — the Claude job's last step: reads the
   agent's commits through a fresh bare repository and its note or triage
   file only if a regular file under `.moderation-out/`, and writes
-  `meta.json` and `patch.diff` for the `apply` job.
+  `meta.json` and `patch.diff` for the `apply` job. A triage patch over the
+  size cap becomes a `failed` result carrying that reason, which
+  `moderate_apply_triage.sh` includes in its "no usable result" note.
 - `moderate_apply_result.sh` / `moderate_apply_triage.sh` — the `apply`
   jobs' scripts (fix/build, and triage): validate the artifact, then push,
   open the PR or comment, and label. The only scripts that write; they
