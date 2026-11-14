@@ -41,8 +41,12 @@
   `docs/TEMPLATE.md`'s "Instance extension points". `develop.d/` holds only
   its own `README.md`. `post-create.d/` also holds `10-uv-sync.sh`, which
   this template ships (`replace` tier, so a sync overwrites it) to run
-  `uv sync` when the devcontainer is created. An instance's own hook
-  scripts go beside it and in `../.github/template-sync-manifest.local.yml`.
+  `uv sync` when the devcontainer is created. Sync replaces only the files
+  the template itself ships, so an instance adds its own hook scripts
+  beside it under names that do not collide with a shipped one, and lists
+  them under `ignore:` in `../.github/template-sync-manifest.local.yml`.
+  That file only feeds the manifest-completeness check, so it is what makes
+  the check pass; it does not change what a sync does.
 
 ## Do
 
