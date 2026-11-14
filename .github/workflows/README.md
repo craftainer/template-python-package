@@ -47,8 +47,9 @@
   secrets to the Makefile targets, and this template's `publish` and
   `finalize` are no-ops, so the "OCI registry" and "Image labels" sections
   below describe nothing that runs here. The release `build` is a single
-  leg: `make release-arches` prints one arch, because a pure-Python wheel
-  is built once.
+  leg, not the two-leg matrix "Architecture matrix" describes:
+  `make release-arches` prints one arch, because a pure-Python wheel is
+  built once.
 - `codspeed.yml` — runs `tests/bench` under [CodSpeed](https://codspeed.io/)
   on every pull request and push to `main`; see "Benchmarks" below.
 - `moderate-bug-triage.yml` / `moderate-bug-fix.yml` /
