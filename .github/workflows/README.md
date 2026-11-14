@@ -40,6 +40,15 @@
   `verify-published` run, and only for an instance that sets
   `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH`. A partial registry
   failure therefore never withholds the release.
+
+  What template-python-package does not do: it publishes no image.
+  `release.yml` has no registry push, login or image-name step and no
+  `docker/metadata-action`; it only passes the `OCI_*` variables and
+  secrets to the Makefile targets, and this template's `publish` and
+  `finalize` are no-ops, so the "OCI registry" and "Image labels" sections
+  below describe nothing that runs here. The release `build` is a single
+  leg: `make release-arches` prints one arch, because a pure-Python wheel
+  is built once.
 - `codspeed.yml` — runs `tests/bench` under [CodSpeed](https://codspeed.io/)
   on every pull request and push to `main`; see "Benchmarks" below.
 - `moderate-bug-triage.yml` / `moderate-bug-fix.yml` /
