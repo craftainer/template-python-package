@@ -37,9 +37,12 @@
   and its older `python3` is never used), retrying with backoff while it
   propagates, and imports it. It fails at once, naming `requires-python`,
   when no interpreter satisfies it. With `PYPI_PUBLISH` unset it does nothing.
-- `develop.d/`, `post-create.d/` — instance hook directories, empty apart
-  from their own `README.md`; see `docs/TEMPLATE.md`'s "Instance extension
-  points".
+- `develop.d/`, `post-create.d/` — instance hook directories; see
+  `docs/TEMPLATE.md`'s "Instance extension points". `develop.d/` holds only
+  its own `README.md`. `post-create.d/` also holds `10-uv-sync.sh`, which
+  this template ships (`replace` tier, so a sync overwrites it) to run
+  `uv sync` when the devcontainer is created. An instance's own hook
+  scripts go beside it and in `../.github/template-sync-manifest.local.yml`.
 
 ## Do
 
