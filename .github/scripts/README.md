@@ -6,10 +6,12 @@
   bump.
 - `setup_environments.sh` — creates or updates the `release`, `moderation`
   and `template-sync` GitHub environments (default-branch-only deployment
-  rule) and prints the commands that move their secrets in; dry run unless
+  rule; existing reviewers, wait timer and `can_admins_bypass` are kept) and prints the commands that move their secrets in; dry run unless
   `--apply` (see `../../docs/TEMPLATE.md`, "Moderation and template-sync
   environments"). `test_environments.py` runs the workflows' environment
-  check step against a stub `gh`.
+  check step (which fails closed on any API error other than a readable answer)
+  and this script against a stub `gh`. Org secrets are flagged when visible to
+  `all` or `private` repositories, or `selected` ones that include a repo given.
 - `template_sync_manifest.py` — parses `../template-sync-manifest.yml`
   and checks that every git-tracked path matches exactly one tier;
   backs both the `template-sync-manifest` prek hook and
@@ -160,7 +162,9 @@
   file only if a regular file under `.moderation-out/`, and writes
   `meta.json` and `patch.diff` for the `apply` job. A triage patch over the
   size cap becomes a `failed` result carrying that reason, which
-  `moderate_apply_triage.sh` includes in its "no usable result" note.
+  `moderate_apply_triage.sh` includes in its "no usable result" note only
+  when it is exactly the fixed `size_limit_reason` sentence from
+  `moderate_lib.sh`; an agent's own `failed` result carries no comment.
 - `moderate_apply_result.sh` / `moderate_apply_triage.sh` — the `apply`
   jobs' scripts (fix/build, and triage): validate the artifact, then push,
   open the PR or comment, and label. The only scripts that write; they

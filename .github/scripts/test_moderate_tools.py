@@ -318,6 +318,14 @@ class PackageResultTest(unittest.TestCase):
         self.assertIn("larger than", meta["comment"])
         self.assertFalse((self.out / "patch.diff").exists())
 
+    def test_triage_agent_reported_failed_carries_no_comment(self) -> None:
+        """`failed` is the packager's word: an agent's own text under it is dropped."""
+        (self.ws / ".moderation-out" / "triage.json").write_text(
+            json.dumps({"action": "failed", "comment": "ping @everyone http://x.example"})
+        )
+        meta = self.package("triage")
+        self.assertEqual((meta["action"], meta["comment"]), ("failed", ""))
+
     def test_triage_result_bad_shapes(self) -> None:
         """Invalid JSON, wrong types and a symlinked file all become `failed`."""
         target = self.ws / ".moderation-out" / "triage.json"

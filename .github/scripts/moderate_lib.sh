@@ -12,6 +12,13 @@ MAX_PATCH_BYTES=2097152
 MAX_TEXT_CHARS=10000
 MAX_TITLE_CHARS=200
 
+# size_limit_reason: the one fixed sentence a packaged `failed` triage result may
+# carry. The apply step posts a failed result's comment only when it equals this
+# text, so nothing the agent wrote ever reaches the issue through that path.
+size_limit_reason() {
+  echo "The automated change is larger than the ${MAX_PATCH_BYTES}-byte limit for an unattended run."
+}
+
 # is_sha <value>: a full 40-character lowercase hex object name, nothing else
 # (so it can never be read as a git option).
 is_sha() {

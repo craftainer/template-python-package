@@ -102,8 +102,8 @@ jobs:
               echo "::error::Environment '$ENVIRONMENT_NAME' does not exist or is not readable. Create it with the setup in docs/TEMPLATE.md before running this workflow."
               exit 1
             fi
-            echo "::warning::Cannot read environment '$ENVIRONMENT_NAME' with this token ($(head -c 200 "$err")); its branch policy is unverified."
-            exit 0
+            echo "::error::Cannot read environment '$ENVIRONMENT_NAME' with this token ($(head -c 200 "$err")); its branch policy is unverified, so this run fails closed. Re-run if the error looks transient."
+            exit 1
           fi
           default_branch=$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)
           flags=$(jq -r '.deployment_branch_policy | if . == null then "none" else "\(.custom_branch_policies)/\(.protected_branches)" end' <<< "$env_json")

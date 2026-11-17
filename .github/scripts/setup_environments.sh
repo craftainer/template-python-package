@@ -12,9 +12,11 @@
 # environment and POST its branch policy. Secrets are never moved or deleted
 # (values can't be read back): the script prints the `gh secret set --env` /
 # `gh secret delete` commands for a human to run. Organization secrets are
-# listed by name and visibility, and the ones visible to every repository are
+# listed by name and visibility, and the ones visible to every repository,
+# every private one, or shared with a repository named here are
 # flagged (a branch workflow can read them; an environment can't stop that).
-# Existing reviewers and wait timers on an environment are kept.
+# Existing reviewers, wait timers and the admin-bypass setting on an
+# environment are kept (a new environment gets GitHub's default: admins bypass).
 #
 # Usage:
 #   setup_environments.sh [--apply] [--env NAME]... [--org ORG] REPO...
@@ -97,8 +99,24 @@ else
     done
     [ -n "$owner_env" ] || continue
     echo "  $name: visibility=$vis ($owner_env secret)"
-    if [ "$vis" = all ]; then
-      echo "    FLAG: visible to every repository, from any branch. Remediate (not run by this script):"
+    flag=
+    case "$vis" in
+      all) flag="visible to every repository" ;;
+      private) flag="visible to every private repository" ;;
+      selected)
+        # Only a problem for the repositories it is shared with: name the ones given here.
+        shared=$(get "orgs/$ORG/actions/secrets/$name/repositories" | jq -r '.repositories[]?.full_name')
+        for r in "${repos[@]}"; do
+          case "$r" in */*) full="$r" ;; *) full="$ORG/$r" ;; esac
+          if grep -qxF "$full" <<< "$shared"; then
+            flag="shared with selected repositories, including $full"
+            break
+          fi
+        done
+        ;;
+    esac
+    if [ -n "$flag" ]; then
+      echo "    FLAG: $flag, readable from any branch. Remediate (not run by this script):"
       echo "      per repo that needs it: gh secret set $name --env $owner_env -R $ORG/<repo>"
       echo "      then: gh secret delete $name --org $ORG"
     fi
@@ -129,11 +147,14 @@ for r in "${repos[@]}"; do
     have_flags=null
     [ -z "$env_json" ] || have_flags=$(jq -c '.deployment_branch_policy // null' <<< "$env_json")
     if [ -z "$env_json" ] || [ "$have_flags" != "$want_flags" ]; then
-      # A PUT replaces what it omits, so carry over existing protection rules.
+      # A PUT replaces what it omits, so carry over existing protection rules
+      # and can_admins_bypass (read back by GET, accepted by PUT, though absent
+      # from GitHub's published OpenAPI schema).
       body=$(jq -c --argjson flags "$want_flags" '
         {deployment_branch_policy: $flags}
         + (if . == null then {} else
-            ([.protection_rules[]? | select(.type == "wait_timer") | .wait_timer][0]
+            (if .can_admins_bypass == null then {} else {can_admins_bypass: .can_admins_bypass} end)
+            + ([.protection_rules[]? | select(.type == "wait_timer") | .wait_timer][0]
               // null | if . == null then {} else {wait_timer: .} end)
             + ([.protection_rules[]? | select(.type == "required_reviewers")][0]
               // null | if . == null then {} else
@@ -177,8 +198,10 @@ for r in "${repos[@]}"; do
     env_secrets=$(get "repos/$repo/environments/$env_name/secrets" | jq -r '.secrets[]?.name')
     wf=$(workflow_of "$env_name")
     ready=no
-    if get "repos/$repo/contents/.github/workflows/$wf" -H "Accept: application/vnd.github.raw" \
-      | grep -q "environment: $env_name"; then
+    # Into a variable, not `| grep -q`: grep -q exits on its first match, the
+    # producer can then die of SIGPIPE, and pipefail would report that as "no".
+    wf_text=$(get "repos/$repo/contents/.github/workflows/$wf" -H "Accept: application/vnd.github.raw")
+    if grep -q "environment: $env_name" <<< "$wf_text"; then
       ready=yes
     fi
     echo "    $wf on $default declares 'environment: $env_name': $ready"
