@@ -97,13 +97,18 @@ else
   # failed result's comment, so the maintainer learns why instead of seeing the
   # generic "no usable result" note.
   if [ "$too_large" = 1 ]; then
-    comment="The automated change is larger than the ${MAX_PATCH_BYTES}-byte limit for an unattended run."
+    comment="$(size_limit_reason)"
   fi
   result="$workspace/.moderation-out/triage.json"
   if [ "$too_large" = 0 ] && agent_file "$result" "$workspace" \
     && jq -e '(.action | type == "string") and (.comment | type == "string")' "$result" > /dev/null 2>&1; then
     action="$(jq -r '.action' "$result")"
     comment="$(jq -r '.comment[0:20000]' "$result")"
+    # `failed` is the packager's own word for "no usable result": an agent that
+    # reports it carries no comment, so only the reason above is ever posted.
+    if [ "$action" = failed ]; then
+      comment=""
+    fi
   fi
   jq -n \
     --arg issue "$GITHUB_ISSUE_NUMBER" \

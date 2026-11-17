@@ -251,8 +251,8 @@ Findings from the OWASP review (A03/A08), and what each now does:
   syncing the workflows that carry the `environment:` lines**:
   `setup_environments.sh OWNER/REPO` is a dry run that prints what it
   would do; `--apply` creates each environment with *Selected branches*
-  and one rule, the default branch, and keeps any reviewers or wait timer
-  already set; `--env NAME` limits it. It never touches secrets (values
+  and one rule, the default branch, and keeps any reviewers, wait timer or
+  `can_admins_bypass` setting already set; `--env NAME` limits it. It never touches secrets (values
   can't be read back): it prints `gh secret set NAME --env <environment>`
   and `gh secret delete NAME` for you to run, and flags an organization
   secret visible to all repositories, which any branch workflow can read
@@ -279,9 +279,10 @@ Findings from the OWASP review (A03/A08), and what each now does:
   `actions: read` permission those endpoints need) and **fail** with a
   message when the environment is missing or has no custom branch policy,
   or its rules aren't exactly one `branch:<default branch>`. If the token
-  cannot read the environment (a 401/403), the step only warns that the
-  policy is unverified, so a token or plan difference never blocks a
-  release or a moderation run. The check is a fail-fast diagnostic only: a
+  cannot read the environment for any other reason (a 401/403 or a 5xx),
+  the step fails closed too: a policy it cannot verify is not assumed to
+  hold, so re-run once the API answers, or fix the token's `actions: read`.
+  The check is a fail-fast diagnostic only: a
   writer can delete it on their own branch. What enforces the rule is the
   environment itself.
 - **Renovate waits 3 days before automerging.** The "patch and minor
