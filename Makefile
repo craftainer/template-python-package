@@ -33,10 +33,10 @@ SYFT_IMAGE := anchore/syft:v1.57.1@sha256:03215d0e98b661d0ecbc8575dbc14d65be1743
 # stay the source the devcontainer test compares, and the guard below fails the
 # Makefile if the image tag drifts from them.
 # renovate: datasource=github-releases depName=astral-sh/uv
-UV_VERSION := 0.13.7
+UV_VERSION := 0.13.8
 # renovate: datasource=python-version depName=python versioning=docker
 PYTHON_VERSION := 3.14
-UV_IMAGE := ghcr.io/astral-sh/uv:0.13.7-python3.14-trixie-slim@sha256:e80c05a310400cfc90af00b5b7271ef9ad24816e3265e1162af8a678e1aad099
+UV_IMAGE := ghcr.io/astral-sh/uv:0.13.8-python3.14-trixie-slim@sha256:81a1340fea1e72ad4a8e9a016128b0c61041cf182ea49fd788023e52842bc147
 ifeq ($(findstring :$(UV_VERSION)-python$(PYTHON_VERSION)-,$(UV_IMAGE)),)
 $(error UV_IMAGE ($(UV_IMAGE)) does not match UV_VERSION $(UV_VERSION) and PYTHON_VERSION $(PYTHON_VERSION); update the three together)
 endif
